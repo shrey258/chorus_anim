@@ -43,8 +43,7 @@
   color: transparent;
 }
 
-/* Single-stroke traced centerline, superimposed on top of the (invisible) font.
-   Stroked, not filled — ready for a draw-on animation. */
+
 .chorus-etch {
   position: absolute;
   left: 50%;
@@ -55,7 +54,7 @@
 
 .chorus-etch path {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.85);
+  stroke: #ffffff;
   /* Matches the median stroke thickness of Chorus_vector.svg (~6.5 in the
      483x156 viewBox units). */
   stroke-width: 6.5;
