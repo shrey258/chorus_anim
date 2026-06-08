@@ -1,4 +1,3 @@
-
 /* Outer glass panel */
 .glass-outer {
   width: 720px;
@@ -33,17 +32,6 @@
   justify-content: center;
 }
 
-/* Live font — present in the DOM but transparent, so it vanishes into
-   the inner card surface. Ready for you to animate. */
-.chorus {
-  font-family: 'Ms Madi', cursive;
-  font-size: 210px;
-  line-height: 210px;
-  letter-spacing: 0.01em;
-  color: transparent;
-}
-
-
 .chorus-etch {
   position: absolute;
   left: 50%;
@@ -70,14 +58,5 @@
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
   }
 }
