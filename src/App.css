@@ -1,3 +1,45 @@
+/* Stage — stacks the card above the trigger button */
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+
+/* Apple-style pill trigger */
+.play-btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 980px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  font: 500 15px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: 0.01em;
+  padding: 13px 30px;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.12);
+  transition:
+    background 220ms ease,
+    border-color 220ms ease,
+    transform 120ms ease;
+}
+
+.play-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.play-btn:active {
+  transform: scale(0.97);
+}
+
+.play-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 3px;
+}
+
 /* Outer glass panel */
 .glass-outer {
   width: 720px;

@@ -1,5 +1,5 @@
 import './App.css'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { animate } from 'framer-motion'
 
 // Shared path data — reused verbatim by the base stroke, the glowing comet
@@ -16,17 +16,26 @@ function App() {
   const headRef = useRef(null) // glowing comet section trailing the writing tip
   const tipRef = useRef(null) // luminous writing tip (the moving light source)
   const pulseRef = useRef(null) // duplicate stroke for the final glow breath
+  const mapRef = useRef(null) // precomputed { L, lengthAt } timing map
+  const runRef = useRef({ raf: 0, timer: 0, anims: [] }) // active run handles
+  const [started, setStarted] = useState(false)
 
-  useEffect(() => {
+  // Cancel any in-flight frame loop / timer / tween from a previous run.
+  const stopRun = useCallback(() => {
+    const r = runRef.current
+    cancelAnimationFrame(r.raf)
+    clearTimeout(r.timer)
+    r.anims.forEach((a) => a?.stop?.())
+    runRef.current = { raf: 0, timer: 0, anims: [] }
+  }, [])
+
+  // Return every layer to the pre-writing (hidden) state.
+  const reset = useCallback(() => {
     const base = baseRef.current
     const head = headRef.current
     const tip = tipRef.current
     const pulse = pulseRef.current
-    if (!base) return
-
-    const L = base.getTotalLength()
-
-    // start hidden
+    const L = mapRef.current?.L ?? base.getTotalLength()
     base.style.strokeDasharray = `${L} ${L}`
     base.style.strokeDashoffset = `${L}`
     head.style.strokeDasharray = `${HEAD} ${L + HEAD}`
@@ -34,14 +43,15 @@ function App() {
     head.style.opacity = '0'
     tip.style.opacity = '0'
     pulse.style.opacity = '0'
+  }, [])
 
-    // reduced motion: present the finished word, skip the writing
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      base.style.strokeDashoffset = '0'
-      return
-    }
+  // Build the curvature-based timing map once (the heavy work), then idle in
+  // the hidden state until the button is tapped.
+  useEffect(() => {
+    const base = baseRef.current
+    if (!base) return
+    const L = base.getTotalLength()
 
-    // ---- sample the path + analyse curvature ------------------------------
     const N = 1000
     const px = new Float64Array(N + 1)
     const py = new Float64Array(N + 1)
@@ -71,21 +81,17 @@ function App() {
       }
       return k
     }
-    const kBroad = curvature(6) // sweeping curves vs tight loops
-    const kSharp = curvature(2) // abrupt direction changes / cusps
+    const kBroad = curvature(6)
+    const kSharp = curvature(2)
 
-    // ---- speed profile -----------------------------------------------------
-    // fast on gentle sweeps, slower through loops, with a brief extra dip at
-    // sharp direction changes. Tuned so sweeps run ~19% above the mean pace.
+    // speed: fast on gentle sweeps, slower through loops, brief dip at cusps
     const raw = new Float64Array(N + 1)
     for (let i = 0; i <= N; i++) {
       let v = 1 / (1 + 60 * Math.pow(kBroad[i], 1.2))
-      if (kSharp[i] > 0.04) {
-        v *= 1 - 0.5 * Math.min(1, (kSharp[i] - 0.04) / 0.04)
-      }
+      if (kSharp[i] > 0.04) v *= 1 - 0.5 * Math.min(1, (kSharp[i] - 0.04) / 0.04)
       raw[i] = Math.max(0.35, Math.min(1, v))
     }
-    // Gaussian-smooth the profile so speed changes glide — no jumps, no stop-start
+    // Gaussian-smooth so speed changes glide — no jumps, no stop-start
     const SIGMA = 9
     const RAD = SIGMA * 3
     const speed = new Float64Array(N + 1)
@@ -101,15 +107,12 @@ function App() {
       }
       speed[i] = num / den
     }
-
-    // ---- timing map: cumulative time = ∫ ds / speed, normalised -----------
+    // timing map: cumulative time = ∫ ds / speed, normalised to 0..1
     const cum = new Float64Array(N + 1)
     for (let i = 1; i <= N; i++) {
       cum[i] = cum[i - 1] + (arc[i] - arc[i - 1]) / ((speed[i] + speed[i - 1]) / 2)
     }
-    const totalCost = cum[N]
-    for (let i = 0; i <= N; i++) cum[i] /= totalCost
-
+    for (let i = 0; i <= N; i++) cum[i] /= cum[N]
     // invert: normalised time fraction -> arc length
     const lengthAt = (u) => {
       if (u <= 0) return 0
@@ -126,12 +129,34 @@ function App() {
       return arc[i - 1] + (arc[i] - arc[i - 1]) * f
     }
 
-    // gentle global envelope so the pen eases off from rest and settles
-    const ease = (t) => (1 - Math.cos(Math.PI * t)) / 2
+    mapRef.current = { L, lengthAt }
+    reset()
+    return stopRun
+  }, [reset, stopRun])
 
-    let raf = 0
+  // Tap handler — (re)starts the handwriting animation.
+  const play = useCallback(() => {
+    const base = baseRef.current
+    const head = headRef.current
+    const tip = tipRef.current
+    const pulse = pulseRef.current
+    const map = mapRef.current
+    if (!base || !map) return
+
+    stopRun()
+    reset()
+    setStarted(true)
+
+    // reduced motion: reveal the finished word, skip the writing
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      base.style.strokeDashoffset = '0'
+      return
+    }
+
+    const { L, lengthAt } = map
+    const ease = (t) => (1 - Math.cos(Math.PI * t)) / 2 // gentle start/settle
+    const r = runRef.current
     let startT = 0
-    let pulseTimer = 0
     let finished = false
 
     const tick = (now) => {
@@ -150,29 +175,26 @@ function App() {
       tip.style.opacity = `${appear}`
 
       if (t < 1) {
-        raf = requestAnimationFrame(tick)
+        r.raf = requestAnimationFrame(tick)
       } else if (!finished) {
         finished = true
         base.style.strokeDashoffset = '0'
         // the writing light settles into the finished word (softer base glow)
-        animate(head, { opacity: 0 }, { duration: 0.6, ease: 'easeOut' })
-        animate(tip, { opacity: 0 }, { duration: 0.5, ease: 'easeOut' })
+        r.anims.push(animate(head, { opacity: 0 }, { duration: 0.6, ease: 'easeOut' }))
+        r.anims.push(animate(tip, { opacity: 0 }, { duration: 0.5, ease: 'easeOut' }))
         // hold ~1s, then one subtle glow breath; the word stays lit
-        pulseTimer = setTimeout(() => {
-          animate(pulse, { opacity: [0, 0.55, 0] }, { duration: 1.5, ease: 'easeInOut' })
+        r.timer = setTimeout(() => {
+          r.anims.push(
+            animate(pulse, { opacity: [0, 0.55, 0] }, { duration: 1.5, ease: 'easeInOut' }),
+          )
         }, HOLD_MS)
       }
     }
-    raf = requestAnimationFrame(tick)
-
-    return () => {
-      cancelAnimationFrame(raf)
-      clearTimeout(pulseTimer)
-    }
-  }, [])
+    r.raf = requestAnimationFrame(tick)
+  }, [reset, stopRun])
 
   return (
-    <div>
+    <div className="stage">
       <div className="glass-outer">
         <div className="glass-inner">
           <svg
@@ -296,6 +318,10 @@ function App() {
           </svg>
         </div>
       </div>
+
+      <button type="button" className="play-btn" onClick={play}>
+        {started ? 'Replay' : 'Write'}
+      </button>
     </div>
   )
 }
